@@ -7,12 +7,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
 
 const socketPath = "/tmp/prime_socket"
-const bufferSize = 1048576 // 1 MB buffer size
+const bufferSize = 1024 // Reduced buffer size
 
 type PrimeResponse struct {
     Primes []int  `json:"primes"`
@@ -58,15 +59,32 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Read the JSON response from the Unix socket
+    // Read the file path from the Unix socket
+    filePath := make([]byte, bufferSize)
+    n, err := conn.Read(filePath)
+    if err != nil {
+        handleError(w, "Failed to read file path from Unix socket", http.StatusInternalServerError, err)
+        return
+    }
+    filePathStr := string(filePath[:n])
+    log.Printf("Received file path from Unix socket: %s\n", filePathStr)
+
+    // Open and read the JSON response from the file
+    file, err := os.Open(filePathStr)
+    if err != nil {
+        handleError(w, "Failed to open response file", http.StatusInternalServerError, err)
+        return
+    }
+    defer file.Close()
+
     var response PrimeResponse
-    decoder := json.NewDecoder(conn)
+    decoder := json.NewDecoder(file)
     err = decoder.Decode(&response)
     if err != nil {
         if err == io.EOF {
             log.Println("Reached end of file while reading response")
         } else {
-            handleError(w, "Failed to decode JSON response from Unix socket", http.StatusInternalServerError, err)
+            handleError(w, "Failed to decode JSON response from file", http.StatusInternalServerError, err)
             return
         }
     }

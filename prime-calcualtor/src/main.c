@@ -11,7 +11,7 @@
 #define SOCKET_PATH "/tmp/prime_socket"
 #define QUEUE_SIZE 10
 #define THREAD_POOL_SIZE 4
-#define BUFFER_SIZE 1048576 // 1 MB buffer size
+#define BUFFER_SIZE 1024 // Reduced buffer size
 
 typedef struct
 {
@@ -79,73 +79,38 @@ void *worker_thread(void *arg)
     {
       printf("Calculated primes: size=%d, time=%.3f ms\n", size, elapsed);
 
-      // Format the response as JSON
-      char *response = malloc(BUFFER_SIZE);
-      if (!response)
+      // Generate a unique temporary file path
+      char temp_file_path[256];
+      snprintf(temp_file_path, sizeof(temp_file_path), "/tmp/prime_response_%d.json", request.client_socket);
+
+      // Open the file for writing
+      FILE *file = fopen(temp_file_path, "w");
+      if (!file)
       {
-        perror("malloc");
+        perror("fopen");
         free(primes);
         close(request.client_socket);
         continue;
       }
-      snprintf(response, BUFFER_SIZE, "{\"primes\":[");
-      size_t response_len = strlen(response);
+
+      // Write the JSON response to the file
+      fprintf(file, "{\"primes\":[");
       for (int i = 0; i < size; i++)
       {
-        char buffer[16];
-        snprintf(buffer, sizeof(buffer), "%d", primes[i]);
-        size_t buffer_len = strlen(buffer);
-        if (response_len + buffer_len + 2 >= BUFFER_SIZE)
-        {
-          response = realloc(response, response_len + buffer_len + 2);
-          if (!response)
-          {
-            perror("realloc");
-            free(primes);
-            close(request.client_socket);
-            continue;
-          }
-        }
-        strcat(response, buffer);
-        response_len += buffer_len;
+        fprintf(file, "%d", primes[i]);
         if (i < size - 1)
         {
-          strcat(response, ",");
-          response_len++;
+          fprintf(file, ",");
         }
       }
-      char time_buffer[64];
-      snprintf(time_buffer, sizeof(time_buffer), "], \"time\": \"%.3f ms\"}", elapsed);
-      size_t time_buffer_len = strlen(time_buffer);
-      if (response_len + time_buffer_len + 1 >= BUFFER_SIZE)
-      {
-        response = realloc(response, response_len + time_buffer_len + 1);
-        if (!response)
-        {
-          perror("realloc");
-          free(primes);
-          close(request.client_socket);
-          continue;
-        }
-      }
-      strcat(response, time_buffer);
-      response_len += time_buffer_len;
+      fprintf(file, "], \"time\": \"%.3f ms\"}", elapsed);
+      fclose(file);
 
-      // Send the JSON response to the client
-      size_t total_written = 0;
-      while (total_written < response_len)
-      {
-        ssize_t written = write(request.client_socket, response + total_written, response_len - total_written);
-        if (written < 0)
-        {
-          perror("write");
-          break;
-        }
-        total_written += written;
-      }
-      free(response);
+      // Send the file path to the client
+      write(request.client_socket, temp_file_path, strlen(temp_file_path));
+
       free(primes);
-      printf("Response size: %ld bytes\n", total_written);
+      printf("Response written to file: %s\n", temp_file_path);
     }
     else
     {
