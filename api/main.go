@@ -30,6 +30,16 @@ func handleError(w http.ResponseWriter, message string, code int, err error) {
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
+    // Add CORS headers
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+    w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+    // Handle preflight request
+    if r.Method == http.MethodOptions {
+        return
+    }
+
     start := time.Now()
 
     limitStr := r.URL.Query().Get("limit")
@@ -90,7 +100,8 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
     }
 
     elapsed := time.Since(start)
-    response.Time = elapsed.String()
+    elapsedMilliseconds := elapsed.Seconds() * 1000
+    response.Time = fmt.Sprintf("%.2f ms", elapsedMilliseconds)
     w.Header().Set("Content-Type", "application/json")
     err = json.NewEncoder(w).Encode(response)
     if err != nil {
@@ -98,7 +109,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("Handled request: limit=%d, time=%s\n", limit, elapsed)
+    log.Printf("Handled request: limit=%d, time=%.2f ms\n", limit, elapsedMilliseconds)
 }
 
 func primeListHandler(w http.ResponseWriter, r *http.Request) {
